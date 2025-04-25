@@ -8,7 +8,7 @@ import os
 from io import BytesIO
 from generated_color_by_contrast import ensure_readable_colors, contrast_ratio
 
-super_sub_size_map = {1:"tiny", 2:"scriptsize", 3:"footnotesize", 4:"small", 5:"normalsize", 6:"large", 7:"Large"}
+# super_sub_size_map = {1:"tiny", 2:"scriptsize", 3:"footnotesize", 4:"small", 5:"normalsize", 6:"large", 7:"Large"}
 
 
 def generate_text_image(
@@ -31,7 +31,7 @@ def generate_text_image(
     combined_text = main_text
     
     super_sub_position = str(super_sub_position) + "ex"
-    super_sub_size = super_sub_size_map[super_sub_size]
+    # super_sub_size = super_sub_size_map[super_sub_size]
     
     buf = BytesIO()
     
@@ -46,12 +46,15 @@ def generate_text_image(
         super_or_sub = 1
         super_sub_position = "-" + super_sub_position
         
-        combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\{super_sub_size} {sub_text}}}}}$"
+        # combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\{super_sub_size} {sub_text}}}}}$"
+        
+        combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{font_size*0.7}}}{{0}}\\selectfont  {sub_text}}}}}$"
+    
     
     # Set font
     font_prop = None
     rcParams['text.usetex'] = True
-    # rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'
+    rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'
     if font_type.lower() in ['serif', 'sans-serif', 'monospace']:
         rcParams['mathtext.fontset'] = 'custom'
         rcParams['mathtext.rm'] = font_type.lower()
@@ -254,9 +257,13 @@ if __name__ == "__main__":
     
     # Step 1: Generate the text image  
     generated_text_color = (0.0, 0.0, 0.0, 1.0) # Normalized RGBA 1.0 means no transpancy
-    gen_font_size = 16
+    gen_font_size = 5
+    
     super_sub_position = 0.5
-    super_sub_size = 4
+    #super_sub_size_map = {1:"tiny",
+    # 2:"scriptsize", 3:"footnotesize", 
+    # 4:"small", 5:"normalsize", 6:"large", 7:"Large"}
+    super_sub_size_ratio = 0.8
     gen_font_type = "/media/Tairen_Chen/Data/all_font_ttfs/georgia/georgia.ttf"
     
     
@@ -266,7 +273,7 @@ if __name__ == "__main__":
         sub_text='2',
         text_color=generated_text_color,
         super_sub_position=super_sub_position,
-        super_sub_size=super_sub_size,
+        super_sub_size=gen_font_size * super_sub_size_ratio,
         font_size=gen_font_size,
         font_type=gen_font_type,
     )
@@ -286,7 +293,7 @@ if __name__ == "__main__":
     
     gen_font = gen_font_type.split(os.sep)[-1]
         
-    save_image_name = super_sub_chk + "_e" + str(super_sub_position) + "_f" + str(super_sub_size) + "_GenFontSize_" + str(gen_font_size) + \
+    save_image_name = super_sub_chk + "_e" + str(super_sub_position) + "_ratio" + str(super_sub_size_ratio) + "_GenFontSize_" + str(gen_font_size) + \
                       "_GenFontColor_" + str(list(generated_text_color)) \
                           + "_" + gen_font + ".png"
 
