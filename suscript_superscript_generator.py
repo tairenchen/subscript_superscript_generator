@@ -5,16 +5,21 @@ import matplotlib.image as mpimg
 import numpy as np
 from PIL import Image
 import os
+from io import BytesIO
 from generated_color_by_contrast import ensure_readable_colors, contrast_ratio
 
+super_sub_size_map = {1:"tiny", 2:"scriptsize", 3:"footnotesize", 4:"small", 5:"normalsize", 6:"large", 7:"Large"}
+
+
 def generate_text_image(
-    output_path,
     main_text="Text",
     super_text=None,
     sub_text=None,
     text_color=(0.0, 0.0, 0.0, 1.0),
     font_size=22,
     left_adjustment=0.02,
+    super_sub_position=0.5, # For the superscript, it moves higher; for subscript, it moves lower
+    super_sub_size=5, # define the superscript or subscript font size
     dpi=300,
     font_type = 'serif',
     transparent=True
@@ -24,13 +29,29 @@ def generate_text_image(
     """
     # Create combined text
     combined_text = main_text
+    
+    super_sub_position = str(super_sub_position) + "ex"
+    super_sub_size = super_sub_size_map[super_sub_size]
+    
+    buf = BytesIO()
+    
     if super_text:
-        combined_text = f"{main_text}$^{{{super_text}}}$"
+        super_or_sub = 0
+        # combined_text = f"{main_text}$^{{{super_text}}}$"
+        # combined_text = f"{main_text}$^{{\\{super_sub_size} {super_text}}}$"
+        # combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{{super_text}}}}}$"
+        combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{\\{super_sub_size} {super_text}}}}}$"
     elif sub_text:
-        combined_text = f"{main_text}$_{{{sub_text}}}$"
-
+        # combined_text = f"{main_text}$_{{{sub_text}}}$"
+        super_or_sub = 1
+        super_sub_position = "-" + super_sub_position
+        
+        combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\{super_sub_size} {sub_text}}}}}$"
+    
     # Set font
     font_prop = None
+    rcParams['text.usetex'] = True
+    # rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'
     if font_type.lower() in ['serif', 'sans-serif', 'monospace']:
         rcParams['mathtext.fontset'] = 'custom'
         rcParams['mathtext.rm'] = font_type.lower()
@@ -73,19 +94,19 @@ def generate_text_image(
     
     # Save the image
     plt.savefig(
-        output_path,
+        buf,
         bbox_inches='tight',
         pad_inches=0,
         transparent=transparent,
         dpi=dpi
     )
-    
+    buf.seek(0)
+    gen_image = Image.open(buf)
     plt.close()
-    print(f"Text image saved to {output_path}")
     
     # Return the dimensions of the generated image
-    img = Image.open(output_path)
-    return img.size
+    # img = Image.open(output_path)
+    return gen_image.size, gen_image, super_or_sub
 
 
 def gen_image_random_sample_(wdith_range_bd, height_range_bd, text_size, background_img, pad_all):
@@ -105,12 +126,12 @@ def sample_from_bgImage(background_img:Image, text_img_size:list, pad_all:list, 
     img_w, img_h = background_img.size
     text_w, text_h = text_img_size
     pad_left, pad_top, pad_right, pad_bottom = pad_all
-    
-    if img_w > text_w and img_h > text_h:
-        
-        wdith_range_bd = img_w - text_w - pad_left - pad_right
-        height_range_bd = img_h - text_h - pad_top - pad_bottom
-        
+
+    wdith_range_bd = img_w - text_w - pad_left - pad_right
+    height_range_bd = img_h - text_h - pad_top - pad_bottom
+
+    if wdith_range_bd > 0 and height_range_bd > 0:
+                
         cropped_img_rgb, cropped_image, sample_indices = gen_image_random_sample_(wdith_range_bd, height_range_bd, [text_w, text_h], background_img, pad_all)
         
         count_contrast = 0
@@ -150,7 +171,7 @@ def sample_from_bgImage(background_img:Image, text_img_size:list, pad_all:list, 
 
 
 def overlay_on_background(
-    text_image_path,
+    gen_text_image,
     output_path,
     generated_text_color,
     background_image_path=None,
@@ -176,7 +197,7 @@ def overlay_on_background(
     """
     try:
         # Open the images
-        text_img = Image.open(text_image_path)        
+        text_img = gen_text_image #Image.open(text_image_path)        
         # Get dimensions
         text_width, text_height = text_img.size
         
@@ -213,7 +234,7 @@ def overlay_on_background(
         # combined_img.save(output_path)
         print(f"Combined image saved to {output_path}")
         background_img_ext.paste(combined_img, (pad_left, pad_top))
-        background_img_ext.save("gen_extend_img.png")
+        background_img_ext.save(output_path)
     
     
     except Exception as e:
@@ -223,39 +244,57 @@ def overlay_on_background(
 def normalize_rgba(rgba):
     return tuple(c / 255 for c in rgba)
 
+
 def denormalize_rgba(rgba):
     return tuple(255 * c for c in rgba)
+
 
 # Example usage
 if __name__ == "__main__":
     
     # Step 1: Generate the text image  
     generated_text_color = (0.0, 0.0, 0.0, 1.0) # Normalized RGBA 1.0 means no transpancy
+    gen_font_size = 16
+    super_sub_position = 0.5
+    super_sub_size = 4
+    gen_font_type = "/media/Tairen_Chen/Data/all_font_ttfs/georgia/georgia.ttf"
     
-    font_type = "/media/Tairen_Chen/Data/all_font_ttfs/georgia/georgia.ttf"
     
-    text_size = generate_text_image(
-        "text_with_superscript.png",
+    text_size, gen_image, super_or_sub = generate_text_image(
         main_text="Example",
-        super_text="2",
+        super_text=None,
+        sub_text='2',
         text_color=generated_text_color,
-        font_size=16,
-        font_type=font_type
+        super_sub_position=super_sub_position,
+        super_sub_size=super_sub_size,
+        font_size=gen_font_size,
+        font_type=gen_font_type,
     )
     
     # Step 2: Overlay the text on a background
     # Either use an existing background image or generate an background
     background_img = "/media/Tairen_Chen/Data/background_images/light_background.jpg"
     
-    pad_all = [5,5,10,10] # can generate random pixel values for the padding
+    pad_all = [0,0,0,0] # can generate random pixel values for the padding
     
     generated_text_color_denorm = denormalize_rgba(generated_text_color)
+
+    if super_or_sub:
+        super_sub_chk = "subscript"
+    else:
+        super_sub_chk = "superscript"
     
+    gen_font = gen_font_type.split(os.sep)[-1]
+        
+    save_image_name = super_sub_chk + "_e" + str(super_sub_position) + "_f" + str(super_sub_size) + "_GenFontSize_" + str(gen_font_size) + \
+                      "_GenFontColor_" + str(list(generated_text_color)) \
+                          + "_" + gen_font + ".png"
+
     if os.path.exists(background_img):
         ## with background image
         overlay_on_background(
-            "text_with_superscript.png",
-            "final_image_cropped.png",
+            gen_image,
+            save_image_name,
             generated_text_color_denorm,
             background_img,
             pad_all=pad_all
@@ -268,12 +307,12 @@ if __name__ == "__main__":
         generated_text_color, generated_bkground_color, new_ctr = ensure_readable_colors(generated_text_color_denorm, generated_bkground_color)
         
         overlay_on_background(
-            "text_with_superscript.png",
-            "final_image_cropped.png",
+            gen_image,
+            save_image_name,
             generated_text_color,
             None,
             generated_bkground_color,
             pad_all
         )
-        
+
 
