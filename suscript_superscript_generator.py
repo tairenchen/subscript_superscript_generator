@@ -40,7 +40,8 @@ def generate_text_image(
         # combined_text = f"{main_text}$^{{{super_text}}}$"
         # combined_text = f"{main_text}$^{{\\{super_sub_size} {super_text}}}$"
         # combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{{super_text}}}}}$"
-        combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{\\{super_sub_size} {super_text}}}}}$"
+        combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}$"
+    
     elif sub_text:
         # combined_text = f"{main_text}$_{{{sub_text}}}$"
         super_or_sub = 1
@@ -48,7 +49,7 @@ def generate_text_image(
         
         # combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\{super_sub_size} {sub_text}}}}}$"
         
-        combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{font_size*0.7}}}{{0}}\\selectfont  {sub_text}}}}}$"
+        combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont  {sub_text}}}}}$"
     
     
     # Set font
@@ -257,7 +258,7 @@ if __name__ == "__main__":
     
     # Step 1: Generate the text image  
     generated_text_color = (0.0, 0.0, 0.0, 1.0) # Normalized RGBA 1.0 means no transpancy
-    gen_font_size = 5
+    gen_font_size = 60
     
     super_sub_position = 0.5
     #super_sub_size_map = {1:"tiny",
