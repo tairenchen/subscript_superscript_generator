@@ -1,14 +1,41 @@
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 from matplotlib.font_manager import FontProperties
-import matplotlib.image as mpimg
 import numpy as np
 from PIL import Image
+import PIL
 import os
 from io import BytesIO
 from generated_color_by_contrast import ensure_readable_colors, contrast_ratio
 
 # super_sub_size_map = {1:"tiny", 2:"scriptsize", 3:"footnotesize", 4:"small", 5:"normalsize", 6:"large", 7:"Large"}
+
+def crop_extra_boundary(image:PIL.Image) -> PIL.Image:
+    img_array = np.array(image)
+    
+    # For transparent PNG, find the alpha channel (if it exists)
+    if img_array.shape[2] == 4:  # RGBA
+        # Find non-transparent pixels
+        non_empty_columns = np.where(img_array[:, :, 3].max(axis=0) > 0)[0]
+        non_empty_rows = np.where(img_array[:, :, 3].max(axis=1) > 0)[0]
+    else:  # RGB
+        # Use inverted approach - find non-white pixels (assuming white background)
+        is_not_white = (img_array[:, :, 0] < 255) | (img_array[:, :, 1] < 255) | (img_array[:, :, 2] < 255)
+        non_empty_columns = np.where(is_not_white.any(axis=0))[0]
+        non_empty_rows = np.where(is_not_white.any(axis=1))[0]
+    
+    # Crop the image to content only if there are non-empty pixels
+    if len(non_empty_rows) > 0 and len(non_empty_columns) > 0:
+        cropped_img = img_array[
+            min(non_empty_rows):max(non_empty_rows) + 1,
+            min(non_empty_columns):max(non_empty_columns) + 1
+        ]
+        # Convert back to PIL
+        final_img = Image.fromarray(cropped_img)
+    else:
+        final_img = image
+    
+    return final_img
 
 
 def generate_text_image(
@@ -35,22 +62,32 @@ def generate_text_image(
     
     buf = BytesIO()
     
-    if super_text:
+    if super_text and not sub_text:
         super_or_sub = 0
-        # combined_text = f"{main_text}$^{{{super_text}}}$"
-        # combined_text = f"{main_text}$^{{\\{super_sub_size} {super_text}}}$"
-        # combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{{super_text}}}}}$"
         combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}$"
+        
+        # Add space between the main text and superscript
+        # combined_text = f"{main_text}\\hspace{{0.2em}}$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}$"
     
-    elif sub_text:
-        # combined_text = f"{main_text}$_{{{sub_text}}}$"
+    elif sub_text and not super_text:
         super_or_sub = 1
-        super_sub_position = "-" + super_sub_position
-        
-        # combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\{super_sub_size} {sub_text}}}}}$"
-        
+        super_sub_position = "-" + super_sub_position        
         combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont  {sub_text}}}}}$"
     
+    elif super_text and sub_text:
+        super_or_sub = 2
+        adjusted_sub_position = "-" + super_sub_position  # for subscript (negative lift)
+        combined_text = (
+            f"{main_text}"
+            f"$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}"
+            f"_{{\\raisebox{{{adjusted_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {sub_text}}}}}$"
+        )
+
+    else:
+        # If neither super_text nor sub_text
+        super_or_sub = -1
+        combined_text = main_text
+        
     
     # Set font
     font_prop = None
@@ -91,7 +128,9 @@ def generate_text_image(
     bbox = text.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
         
     # Update figure size
-    fig.set_size_inches(bbox.width, bbox.height)
+    # to avoid cutting the top of superscirpt, increase the bbox.height by 50%
+    # then crop it late
+    fig.set_size_inches(bbox.width, bbox.height * 1.5 )
     
     # Create a tight layout, which is sensitive to padding
     plt.tight_layout(pad=0)
@@ -104,8 +143,21 @@ def generate_text_image(
         transparent=transparent,
         dpi=dpi
     )
+    
+    # save it for testing
+    plt.savefig(
+        "./current_test.png",
+        bbox_inches='tight',
+        pad_inches=0,
+        transparent=transparent,
+        dpi=dpi
+    )
     buf.seek(0)
     gen_image = Image.open(buf)
+    
+    # crop the white space previously added by increasing the bbox.height
+    gen_image = crop_extra_boundary(gen_image)
+    
     plt.close()
     
     # Return the dimensions of the generated image
@@ -183,21 +235,29 @@ def overlay_on_background(
     pad_all = [0, 0, 0, 0],
 ):
     """
-    Overlay the text image on a background image
-    
+    Overlays a generated text image onto a background image (or a plain color background),
+    applying optional padding around the text.
+
     Parameters:
-    -----------
-    text_image_path : str
-        Path to the text image
-    background_image_path : str
-        Path to the background image
-    output_path : str
-        Path to save the combined image
-    position : str or tuple
-        'center' or (x, y) coordinates for positioning
-    scale_background : bool
-        If True, scales the background to match text size
-        If False, crops the background to match text size
+        gen_text_image (PIL.Image.Image): 
+            The generated text image to overlay (already opened as a PIL Image object).
+        
+        output_path (str): 
+            The file path where the final combined image will be saved (e.g., "output.png").
+        
+        generated_text_color (tuple or str): 
+            The text color used when sampling or blending with a background image.
+        
+        background_image_path (str, optional): 
+            Path to a background image file. If None, a solid color background will be created.
+        
+        gen_bg_color (str or tuple, optional): 
+            The background color to use if no background image is provided. 
+            Defaults to 'white'. Accepts color names or RGB(A) tuples.
+        
+        pad_all (list of int, optional): 
+            Padding to apply around the text image [left, top, right, bottom]. 
+            Defaults to [0, 0, 0, 0].
     """
     try:
         # Open the images
@@ -240,7 +300,6 @@ def overlay_on_background(
         background_img_ext.paste(combined_img, (pad_left, pad_top))
         background_img_ext.save(output_path)
     
-    
     except Exception as e:
         print(f"Error overlaying images: {e}")
 
@@ -258,20 +317,23 @@ if __name__ == "__main__":
     
     # Step 1: Generate the text image  
     generated_text_color = (0.0, 0.0, 0.0, 1.0) # Normalized RGBA 1.0 means no transpancy
-    gen_font_size = 60
-    
-    super_sub_position = 0.5
-    #super_sub_size_map = {1:"tiny",
-    # 2:"scriptsize", 3:"footnotesize", 
-    # 4:"small", 5:"normalsize", 6:"large", 7:"Large"}
-    super_sub_size_ratio = 0.8
+    gen_font_size = 10
+    super_sub_position = 0
+    super_sub_size_ratio = 0.5
     gen_font_type = "/media/Tairen_Chen/Data/all_font_ttfs/georgia/georgia.ttf"
+    main_text = "accuracy"
+    super_text = '9'
+    sub_text = ""
     
+    # Add step 2 parameters
+    # Either use an existing background image or generate an background
+    background_img = "/media/Tairen_Chen/Data/background_images/light_background.jp"
+    pad_all = [0,0,0,0] # can generate random pixel values for the padding
     
     text_size, gen_image, super_or_sub = generate_text_image(
-        main_text="Example",
-        super_text=None,
-        sub_text='2',
+        main_text=main_text,
+        super_text=super_text,
+        sub_text=sub_text,
         text_color=generated_text_color,
         super_sub_position=super_sub_position,
         super_sub_size=gen_font_size * super_sub_size_ratio,
@@ -280,23 +342,20 @@ if __name__ == "__main__":
     )
     
     # Step 2: Overlay the text on a background
-    # Either use an existing background image or generate an background
-    background_img = "/media/Tairen_Chen/Data/background_images/light_background.jpg"
-    
-    pad_all = [0,0,0,0] # can generate random pixel values for the padding
-    
     generated_text_color_denorm = denormalize_rgba(generated_text_color)
 
-    if super_or_sub:
+    if super_or_sub == 1:
         super_sub_chk = "subscript"
-    else:
+    elif super_or_sub == 0:
         super_sub_chk = "superscript"
+    elif super_or_sub == 2:
+        super_sub_chk = "bothSuperSub"
     
     gen_font = gen_font_type.split(os.sep)[-1]
         
     save_image_name = super_sub_chk + "_e" + str(super_sub_position) + "_ratio" + str(super_sub_size_ratio) + "_GenFontSize_" + str(gen_font_size) + \
                       "_GenFontColor_" + str(list(generated_text_color)) \
-                          + "_" + gen_font + ".png"
+                          + "_" + gen_font + "_" + main_text + "_" + super_text + "_" + sub_text +  ".png"
 
     if os.path.exists(background_img):
         ## with background image
@@ -310,7 +369,8 @@ if __name__ == "__main__":
 
     else:
         ## without background iamge, so generated background image
-        generated_bkground_color = (0,0,0)
+        generated_bkground_color = (255,255,255)
+        
         # make sure the generated background has a good contrast with generated_text        
         generated_text_color, generated_bkground_color, new_ctr = ensure_readable_colors(generated_text_color_denorm, generated_bkground_color)
         
