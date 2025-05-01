@@ -61,6 +61,12 @@ def generate_text_image(
     # super_sub_size = super_sub_size_map[super_sub_size]
     
     buf = BytesIO()
+
+    # if "$" in main_text or "%" in main_text or "#" in main_text or "&" in main_text or "\\" in main_text:
+    #     main_text = main_text.replace("\\", "").replace("$", "\$").replace("%", "\%").replace("#", "\#").replace("&", "\&")
+
+    if "$" in main_text or "%" in main_text or "#" in main_text or "&" in main_text:
+        main_text = main_text.replace("$", "\$").replace("%", "\%").replace("#", "\#").replace("&", "\&")
     
     if super_text and not sub_text:
         super_or_sub = 0
