@@ -1,14 +1,15 @@
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 from matplotlib.font_manager import FontProperties
+import matplotlib.image as mpimg
 import numpy as np
 from PIL import Image
+import pandas as pd
+import sys
 import PIL
 import os
 from io import BytesIO
-from generated_color_by_contrast import ensure_readable_colors, contrast_ratio
-
-# super_sub_size_map = {1:"tiny", 2:"scriptsize", 3:"footnotesize", 4:"small", 5:"normalsize", 6:"large", 7:"Large"}
+# from generated_color_by_contrast import ensure_readable_colors, contrast_ratio
 
 def crop_extra_boundary(image:PIL.Image) -> PIL.Image:
     img_array = np.array(image)
@@ -49,6 +50,7 @@ def generate_text_image(
     super_sub_size=5, # define the superscript or subscript font size
     dpi=300,
     font_type = 'serif',
+    text_bold = "False",
     transparent=True
 ):
     """
@@ -61,16 +63,20 @@ def generate_text_image(
     # super_sub_size = super_sub_size_map[super_sub_size]
     
     buf = BytesIO()
-
+    #special case for $ adn percent ##################
     # if "$" in main_text or "%" in main_text or "#" in main_text or "&" in main_text or "\\" in main_text:
     #     main_text = main_text.replace("\\", "").replace("$", "\$").replace("%", "\%").replace("#", "\#").replace("&", "\&")
 
     if "$" in main_text or "%" in main_text or "#" in main_text or "&" in main_text:
         main_text = main_text.replace("$", "\$").replace("%", "\%").replace("#", "\#").replace("&", "\&")
-    
+    #############################################################
     if super_text and not sub_text:
         super_or_sub = 0
-        combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}$"
+            
+        if text_bold:
+            combined_text = f"\\textbf{{{main_text}}}$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}$"
+        else:
+            combined_text = f"{main_text}$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}$"
         
         # Add space between the main text and superscript
         # combined_text = f"{main_text}\\hspace{{0.2em}}$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}$"
@@ -78,22 +84,32 @@ def generate_text_image(
     elif sub_text and not super_text:
         super_or_sub = 1
         super_sub_position = "-" + super_sub_position        
-        combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont  {sub_text}}}}}$"
+        if text_bold:
+            combined_text = f"\\textbf{{{main_text}}}$_{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont  {sub_text}}}}}$"
+        else:
+            combined_text = f"{main_text}$_{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont  {sub_text}}}}}$"
     
     elif super_text and sub_text:
         super_or_sub = 2
         adjusted_sub_position = "-" + super_sub_position  # for subscript (negative lift)
-        combined_text = (
-            f"{main_text}"
-            f"$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}"
-            f"_{{\\raisebox{{{adjusted_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {sub_text}}}}}$"
-        )
+        if text_bold:
+            combined_text = (
+                f"\\textbf{{{main_text}}}"
+                f"$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}"
+                f"_{{\\raisebox{{{adjusted_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {sub_text}}}}}$"
+            )
+        else:
+            combined_text = (
+                f"{main_text}"
+                f"$^{{\\raisebox{{{super_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {super_text}}}}}"
+                f"_{{\\raisebox{{{adjusted_sub_position}}}{{\\fontsize{{{super_sub_size}}}{{0}}\\selectfont {sub_text}}}}}$"
+            )
 
     else:
         # If neither super_text nor sub_text
         super_or_sub = -1
         combined_text = main_text
-        
+    
     
     # Set font
     font_prop = None
@@ -241,29 +257,21 @@ def overlay_on_background(
     pad_all = [0, 0, 0, 0],
 ):
     """
-    Overlays a generated text image onto a background image (or a plain color background),
-    applying optional padding around the text.
-
+    Overlay the text image on a background image
+    
     Parameters:
-        gen_text_image (PIL.Image.Image): 
-            The generated text image to overlay (already opened as a PIL Image object).
-        
-        output_path (str): 
-            The file path where the final combined image will be saved (e.g., "output.png").
-        
-        generated_text_color (tuple or str): 
-            The text color used when sampling or blending with a background image.
-        
-        background_image_path (str, optional): 
-            Path to a background image file. If None, a solid color background will be created.
-        
-        gen_bg_color (str or tuple, optional): 
-            The background color to use if no background image is provided. 
-            Defaults to 'white'. Accepts color names or RGB(A) tuples.
-        
-        pad_all (list of int, optional): 
-            Padding to apply around the text image [left, top, right, bottom]. 
-            Defaults to [0, 0, 0, 0].
+    -----------
+    text_image_path : str
+        Path to the text image
+    background_image_path : str
+        Path to the background image
+    output_path : str
+        Path to save the combined image
+    position : str or tuple
+        'center' or (x, y) coordinates for positioning
+    scale_background : bool
+        If True, scales the background to match text size
+        If False, crops the background to match text size
     """
     try:
         # Open the images
@@ -306,6 +314,7 @@ def overlay_on_background(
         background_img_ext.paste(combined_img, (pad_left, pad_top))
         background_img_ext.save(output_path)
     
+    
     except Exception as e:
         print(f"Error overlaying images: {e}")
 
@@ -316,7 +325,6 @@ def normalize_rgba(rgba):
 
 def denormalize_rgba(rgba):
     return tuple(255 * c for c in rgba)
-
 
 # Example usage
 if __name__ == "__main__":
